@@ -1,0 +1,26 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.2",
+	"FriendlyName": "SyncShield Core",
+	"Description": "Source Control Safety Net (Core/OSS Version)",
+	"Category": "Editor",
+	"CreatedBy": "GregOrigin",
+	"CreatedByURL": "www.gregorigin.com",
+	"DocsURL": "www.gregorigin.com",
+	"CanContainContent": false,
+	"EngineVersion": "5.7.0",
+	"SupportedTargetPlatforms": [
+		"Win64"
+	],
+	"Modules": [
+		{
+			"Name": "SyncShield",
+			"Type": "Editor",
+			"LoadingPhase": "PostEngineInit",
+			"PlatformAllowList": [
+				"Win64"
+			]
+		}
+	]
+}
