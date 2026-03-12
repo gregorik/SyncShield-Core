@@ -1,2 +1,73 @@
-# SyncShield-Core
-The Source Control Safety Net and Traffic Light for UE5 (Git / Plastic / Perforce)
+<div align="center">
+  
+# 🛡️ SyncShield Core
+**The Source Control Safety Net for Unreal Engine 5**
+
+[![Unreal Engine](https://img.shields.io/badge/Unreal_Engine-5.2+-blue.svg)](https://www.unrealengine.com/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Win64-lightgray.svg)]()
+
+</div>
+
+---
+
+Ever spent hours tweaking a Blueprint or meticulously painting a landscape, only to hit *Save All* and realize a teammate already locked the file in your source control system? 
+
+**SyncShield Core** is a lightweight, battle-tested Unreal Engine 5 plugin designed to eliminate source control friction and protect your team from lost work and locked-file conflicts. It natively integrates with Unreal's Editor to warn you *before* you make changes, and safely catches you if you try to overwrite someone else's work.
+
+## ✨ Core Features
+
+### 🚫 Strict File Locking Protection
+SyncShield natively intercepts your "Save All" commands. Before any data is written, it rapidly probes your source control provider (Git, Plastic SCM, Perforce) for checkout status. If any package is locked by a teammate (`IsCheckedOutOther`), SyncShield **blocks the save for those specific files** with an explicit warning, while automatically issuing checkouts and safely saving the rest.
+
+### 🔔 Preemptive "Dropbox-Style" Alerts
+Don't wait until you save to find out a file is locked. SyncShield hooks directly into the Unreal Asset Editor. The moment you open a Blueprint, Material, or Data Asset that is locked by another developer, you instantly get a prominent Toast Notification warning you not to edit it.
+
+### 🛠️ Streamlined Editor Toolbar
+Stop fumbling with external CLI windows or hidden context menus. SyncShield adds a dedicated, dynamic status widget right to the Level Editor Toolbar.
+* **Live Status Updates:** See your Branch, pending changes, and unsaved asset counts at a glance.
+* **One-Click Actions:** Save All, Submit Content, or Refresh Status.
+* **Native Git Integration:** Auto-Fetch (configurable interval), Pull (Rebase), and Push directly from the toolbar.
+* **Native Plastic SCM Integration:** One-click Workspace Update.
+
+---
+
+## 🚀 Installation
+
+1. Download or clone this repository.
+2. Place the `SyncShield` folder into your project's `Plugins` directory: `[YourProject]/Plugins/SyncShield/`.
+3. Right-click your `.uproject` file and select **Generate Visual Studio project files**.
+4. Compile your project.
+5. Launch the Unreal Editor. SyncShield will automatically appear in your Level Editor Toolbar.
+
+## ⚙️ Configuration
+
+You can configure SyncShield's behavior via **Project Settings > Plugins > SyncShield**:
+* Adjust polling intervals for dirty checks and Git/Plastic SCM status.
+* Enable or disable **Auto Fetch** (for Git).
+* Toggle Toast Notifications on/off.
+
+---
+
+## 💎 Upgrade to SyncShield Pro
+
+**SyncShield Core** provides the essential safety net for collaborative teams. For solo developers and studio environments looking for maximum data security and advanced workflow automation, check out **[SyncShield Pro on Fab](https://www.fab.com/)**!
+
+**The Pro version includes everything in Core, plus:**
+
+* ⏪ **Local Save History & Time Travel:** SyncShield Pro quietly takes lightweight, localized snapshots of your assets every time you save. Broke a Blueprint? Click "Restore Latest Snapshot" to instantly revert the active asset to its last known good state—without needing to pull from remote source control.
+* 🛑 **Pre-Save Data Validation:** Automatically run custom or engine-level validation checks *before* assets are committed to disk. Prevent broken references, bad naming conventions, or uncompiled Blueprints from ever reaching your repository.
+* 📂 **Advanced Save Profiles:** Stop saving everything just to be safe. Use precision save commands:
+  * *Save Blueprints Only*
+  * *Save Current Level Only*
+  * *Save Recently Touched (Time-windowed)*
+
+---
+
+## 🤝 Contributing
+Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](../../issues). 
+
+## 📜 License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. 
+
+*Copyright (c) 2026 GregOrigin. All Rights Reserved.*
