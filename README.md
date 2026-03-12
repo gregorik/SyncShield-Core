@@ -51,7 +51,7 @@ You can configure SyncShield's behavior via **Project Settings > Plugins > SyncS
 
 ## 💎 Upgrade to SyncShield Pro
 
-**SyncShield Core** provides the essential safety net for collaborative teams. For solo developers and studio environments looking for maximum data security and advanced workflow automation, check out **[SyncShield Pro on Fab (WIP)]([https://www.fab.com/](https://www.fab.com/sellers/GregOrigin))**!
+**SyncShield Core** provides the essential safety net for collaborative teams. For solo developers and studio environments looking for maximum data security and advanced workflow automation, check out **[SyncShield Pro on Fab (WIP)](https://www.fab.com/sellers/GregOrigin)**!
 
 **The Pro version includes everything in Core, plus:**
 
