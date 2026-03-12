@@ -57,6 +57,8 @@ You can configure SyncShield's behavior via **Project Settings > Plugins > SyncS
 
 **The Pro version includes everything in Core, plus:**
 
+* ⚔️ **Conflict Sentinel:** Stop merge conflicts *before* they happen. SyncShield Pro quietly tracks your locally dirty assets and runs background checks against your remote Git branch. If a teammate pushes a change to a file you are currently editing, you get an instant toast warning you of the impending collision.
+* 🌿 **Safe Branch Shifter:** Switch Git branches without playing Russian Roulette with the Unreal Editor. SyncShield Pro's "Safe Switch" pipeline protects your unsaved data, forcefully closes vulnerable asset editors, performs a clean checkout, and lets the Asset Registry hot-reload safely without crashing.
 * ⏪ **Local Save History & Time Travel:** SyncShield Pro quietly takes lightweight, localized snapshots of your assets every time you save. Broke a Blueprint? Click "Restore Latest Snapshot" to instantly revert the active asset to its last known good state—without needing to pull from remote source control.
 * 🛑 **Pre-Save Data Validation:** Automatically run custom or engine-level validation checks *before* assets are committed to disk. Prevent broken references, bad naming conventions, or uncompiled Blueprints from ever reaching your repository.
 * 📂 **Advanced Save Profiles:** Stop saving everything just to be safe. Use precision save commands:
