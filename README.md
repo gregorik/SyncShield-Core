@@ -15,6 +15,8 @@ Ever spent hours tweaking a Blueprint or meticulously painting a landscape, only
 
 **SyncShield Core** is a lightweight, battle-tested Unreal Engine 5 plugin designed to eliminate source control friction and protect your team from lost work and locked-file conflicts. It natively integrates with Unreal's Editor to warn you *before* you make changes, and safely catches you if you try to overwrite someone else's work.
 
+This is a major upgrade and more ambitious refactoring of the earlier [SafeSave plugin](https://github.com/gregorik/SafeSave) which remains fully functional in its own narrower scope.
+
 ## ✨ Core Features
 
 ### 🚫 Strict File Locking Protection
