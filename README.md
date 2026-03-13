@@ -17,6 +17,8 @@ Ever spent hours tweaking a Blueprint or meticulously painting a landscape, only
 
 This is a major upgrade and more ambitious refactoring of the earlier [SafeSave plugin](https://github.com/gregorik/SafeSave) which remains fully functional in its own narrower scope.
 
+Also, in case you need this adapted or integrated into a production UE5 project: I offer paid Unreal Engine [consulting and implementation](https://gregorigin.com/contact.html).
+
 ## ✨ Core Features
 
 ### 🚫 Strict File Locking Protection
