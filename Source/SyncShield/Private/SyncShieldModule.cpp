@@ -148,6 +148,16 @@ bool FSyncShieldModule::SaveAllDirtyPackages(FString& OutSummary)
 					TEXT("The following files are locked by another user and will be blocked from saving:\n\n%s"),
 					*FString::Join(LockedFiles, TEXT("\n")))));
 		}
+
+		if (PackagesToSave.Num() > 0)
+		{
+			TArray<FString> PackagesToCheckout;
+			for (UPackage* Pkg : PackagesToSave)
+			{
+				PackagesToCheckout.Add(Pkg->GetName());
+			}
+			Provider.Execute(ISourceControlOperation::Create<FCheckOut>(), PackagesToCheckout);
+		}
 	}
 	else
 	{
@@ -196,3 +206,5 @@ bool FSyncShieldModule::SaveAllDirtyPackages(FString& OutSummary)
 #undef LOCTEXT_NAMESPACE
 
 IMPLEMENT_MODULE(FSyncShieldModule, SyncShield)
+
+
