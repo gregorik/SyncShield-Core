@@ -10,6 +10,7 @@
 </div>
 
 ---
+[Watch it in action](https://www.youtube.com/watch?v=UCpiobdiJYM) <br>
 
 Ever spent hours tweaking a Blueprint or meticulously painting a landscape, only to hit *Save All* and realize a teammate already locked the file in your source control system? 
 
