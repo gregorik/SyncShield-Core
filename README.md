@@ -14,6 +14,7 @@
 [Get the Pro version](https://www.fab.com/listings/dd5a848f-d6a5-4c5d-a766-87ea191fdd98) <br>
 [Discord support](https://discord.gg/nqYQ5mtmHb)
 
+*[This repository deals with advanced bypasses of standard Unreal C++ bottlenecks. 🟢 Currently available for B2B consulting and remote contract/Co-Dev integration (CET Timezone). [Contact form.](https://gregorigin.com/contact.html)]*
 
 Ever spent hours tweaking a Blueprint or meticulously painting a landscape, only to hit *Save All* and realize a teammate already locked the file in your source control system? 
 
