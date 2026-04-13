@@ -1,5 +1,8 @@
 <div align="center">
-  
+
+<img width="1935" height="1080" alt="SyncShth" src="https://github.com/user-attachments/assets/b7ca8455-5b53-47b9-8d99-0e6ec12b227d" />
+
+
 # 🛡️ SyncShield Core
 **The Source Control Safety Net for Unreal Engine 5**
 
@@ -15,6 +18,9 @@
 [Discord support](https://discord.gg/nqYQ5mtmHb)
 
 *[This repository deals with advanced bypasses of standard Unreal C++ bottlenecks. 🟢 Currently available for B2B consulting and remote contract/Co-Dev integration (CET Timezone). [Contact form.](https://gregorigin.com/contact.html)]*
+
+![SyncShieldProm1](https://github.com/user-attachments/assets/ffadb37f-8cf2-4cae-b4ec-2193eb42cc37)
+
 
 Ever spent hours tweaking a Blueprint or meticulously painting a landscape, only to hit *Save All* and realize a teammate already locked the file in your source control system? 
 
