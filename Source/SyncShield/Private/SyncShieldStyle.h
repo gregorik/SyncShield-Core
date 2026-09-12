@@ -8,7 +8,7 @@
 
 /**
  * Manages the visual styling resources (Icons, Brushes) for the SyncShield plugin.
- * 
+ *
  * Usage:
  * const FSlateBrush* Icon = FSyncShieldStyle::Get().GetBrush("SyncShield.Icon");
  */
@@ -24,6 +24,9 @@ public:
 
 	// Accessor for the Style Set
 	static const ISlateStyle& Get();
+
+	/** Returns nullptr instead of asserting when the style set is unavailable. */
+	static const FSlateBrush* GetOptionalBrush(const FName& BrushName);
 
 	// The Name of this Style Set (used for registration)
 	static FName GetStyleSetName();

@@ -2,7 +2,9 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "SyncShieldModule.h"
+#include "SyncShieldSaveProfileService.h"
 #include "SyncShieldStyle.h"
+#include "SyncShieldSettings.h"
 #include "SSyncShieldToolbar.h"
 
 #include "ISettingsModule.h"
@@ -13,8 +15,6 @@
 #include "ISourceControlModule.h"
 #include "ISourceControlProvider.h"
 #include "SourceControlOperations.h"
-#include "FileHelpers.h"
-#include "Misc/MessageDialog.h"
 
 #define LOCTEXT_NAMESPACE "FSyncShieldModule"
 
@@ -33,12 +33,24 @@ FSyncShieldModule::~FSyncShieldModule() = default;
 void FSyncShieldModule::StartupModule()
 {
 	FSyncShieldStyle::Initialize();
-	FSyncShieldStyle::ReloadTextures();
+	SaveProfileService = MakeUnique<FSyncShieldSaveProfileService>();
 
 	if (UToolMenus::Get())
 	{
 		UToolMenus::Get()->RegisterStartupCallback(
 			FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FSyncShieldModule::RegisterMenus)
+		);
+	}
+
+	if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
+	{
+		SettingsModule->RegisterSettings(
+			"Editor",
+			"Plugins",
+			"SyncShield",
+			LOCTEXT("SyncShieldSettingsName", "SyncShield"),
+			LOCTEXT("SyncShieldSettingsDescription", "Configure SyncShield source control status and automation settings."),
+			GetMutableDefault<USyncShieldSettings>()
 		);
 	}
 
@@ -56,6 +68,11 @@ void FSyncShieldModule::ShutdownModule()
 	UToolMenus::UnRegisterStartupCallback(this);
 	UToolMenus::UnregisterOwner(this);
 
+	if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
+	{
+		SettingsModule->UnregisterSettings("Editor", "Plugins", "SyncShield");
+	}
+
 	if (GEditor)
 	{
 		if (UAssetEditorSubsystem* AssetSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>())
@@ -64,11 +81,18 @@ void FSyncShieldModule::ShutdownModule()
 		}
 	}
 
+	SaveProfileService.Reset();
+
 	FSyncShieldStyle::Shutdown();
 }
 
 void FSyncShieldModule::RegisterMenus()
 {
+	// Scope the entry to this module. Without an owner, FToolMenuEntry::InitWidget
+	// records an empty owner and UnregisterOwner() on shutdown cannot remove it, so
+	// the widget outlives the module and keeps calling into unloaded code.
+	FToolMenuOwnerScoped OwnerScoped(this);
+
 	UToolMenu* Menu = UToolMenus::Get()->ExtendMenu("LevelEditor.LevelEditorToolBar.User");
 	if (Menu)
 	{
@@ -87,8 +111,6 @@ void FSyncShieldModule::RegisterMenus()
 void FSyncShieldModule::OnAssetOpened(UObject* Asset)
 {
 	if (!Asset) return;
-
-	LastActiveAsset = Asset;
 
 	ISourceControlModule& SCModule = ISourceControlModule::Get();
 	if (!SCModule.IsEnabled()) return;
@@ -111,100 +133,31 @@ void FSyncShieldModule::OnAssetOpened(UObject* Asset)
 
 bool FSyncShieldModule::SaveAllDirtyPackages(FString& OutSummary)
 {
-	TArray<UPackage*> Packages;
-	FEditorFileUtils::GetDirtyPackages(Packages);
+	return SaveProfileService ? SaveProfileService->SaveAllDirtyPackages(OutSummary) : false;
+}
 
-	if (Packages.Num() == 0)
+bool FSyncShieldModule::SaveDirtyBlueprintPackages(FString& OutSummary)
+{
+	return SaveProfileService ? SaveProfileService->SaveDirtyBlueprintPackages(OutSummary) : false;
+}
+
+bool FSyncShieldModule::SaveCurrentLevelPackages(FString& OutSummary)
+{
+	return SaveProfileService ? SaveProfileService->SaveCurrentLevelPackages(OutSummary) : false;
+}
+
+FString FSyncShieldModule::BuildSubsystemSummary() const
+{
+	TArray<FString> Lines;
+
+	if (SaveProfileService)
 	{
-		OutSummary = TEXT("SyncShield found no packages to save.");
-		return false;
+		Lines.Add(SaveProfileService->GetLastSummary());
 	}
 
-	TArray<UPackage*> PackagesToSave;
-	TArray<FString> LockedFiles;
-
-	if (ISourceControlModule::Get().IsEnabled())
-	{
-		ISourceControlProvider& Provider = ISourceControlModule::Get().GetProvider();
-
-		for (UPackage* Package : Packages)
-		{
-			FSourceControlStatePtr State = Provider.GetState(Package, EStateCacheUsage::Use);
-			if (State.IsValid() && State->IsCheckedOutOther())
-			{
-				LockedFiles.Add(Package->GetName());
-			}
-			else
-			{
-				PackagesToSave.Add(Package);
-			}
-		}
-
-		if (LockedFiles.Num() > 0)
-		{
-			FMessageDialog::Open(
-				EAppMsgType::Ok,
-				FText::FromString(FString::Printf(
-					TEXT("The following files are locked by another user and will be blocked from saving:\n\n%s"),
-					*FString::Join(LockedFiles, TEXT("\n")))));
-		}
-
-		if (PackagesToSave.Num() > 0)
-		{
-			TArray<FString> PackagesToCheckout;
-			for (UPackage* Pkg : PackagesToSave)
-			{
-				PackagesToCheckout.Add(Pkg->GetName());
-			}
-			Provider.Execute(ISourceControlOperation::Create<FCheckOut>(), PackagesToCheckout);
-		}
-	}
-	else
-	{
-		PackagesToSave = MoveTemp(Packages);
-	}
-
-	if (PackagesToSave.Num() == 0)
-	{
-		OutSummary = LockedFiles.Num() > 0
-			? FString::Printf(TEXT("SyncShield blocked %d locked package(s)."), LockedFiles.Num())
-			: TEXT("SyncShield found nothing saveable.");
-		return false;
-	}
-
-	const FEditorFileUtils::EPromptReturnCode SaveResult = FEditorFileUtils::PromptForCheckoutAndSave(
-		PackagesToSave,
-		false,
-		true,
-		nullptr,
-		false,
-		true);
-
-	bool bSaved = false;
-	if (SaveResult == FEditorFileUtils::PR_Success)
-	{
-		bSaved = true;
-		OutSummary = FString::Printf(TEXT("SyncShield successfully saved %d package(s)."), PackagesToSave.Num());
-	}
-	else if (SaveResult == FEditorFileUtils::PR_Cancelled)
-	{
-		OutSummary = TEXT("SyncShield was cancelled by the user.");
-	}
-	else // PR_Failure
-	{
-		OutSummary = TEXT("SyncShield encountered errors during checkout/save.");
-	}
-
-	if (LockedFiles.Num() > 0)
-	{
-		OutSummary += FString::Printf(TEXT("\nBlocked %d locked package(s)."), LockedFiles.Num());
-	}
-
-	return bSaved;
+	return FString::Join(Lines, TEXT("\n"));
 }
 
 #undef LOCTEXT_NAMESPACE
 
 IMPLEMENT_MODULE(FSyncShieldModule, SyncShield)
-
-

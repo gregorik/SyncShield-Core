@@ -6,7 +6,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Slate/SlateGameResources.h"
 #include "Interfaces/IPluginManager.h"
-#include "Styling/SlateStyleMacros.h" 
+#include "Styling/SlateStyleMacros.h"
 
 // Definition of the singleton
 TSharedPtr<FSlateStyleSet> FSyncShieldStyle::StyleInstance = nullptr;
@@ -43,6 +43,16 @@ const ISlateStyle& FSyncShieldStyle::Get()
 	return *StyleInstance;
 }
 
+const FSlateBrush* FSyncShieldStyle::GetOptionalBrush(const FName& BrushName)
+{
+	if (!StyleInstance.IsValid())
+	{
+		return nullptr;
+	}
+
+	return StyleInstance->GetOptionalBrush(BrushName, nullptr, nullptr);
+}
+
 FName FSyncShieldStyle::GetStyleSetName()
 {
 	static FName StyleSetName(TEXT("SyncShieldStyle"));
@@ -55,8 +65,12 @@ TSharedRef<FSlateStyleSet> FSyncShieldStyle::Create()
 
 	// 1. Locate the Resources folder within the Plugin directory
 	// Result: .../Plugins/SyncShield/Resources/
-	FString ContentDir = IPluginManager::Get().FindPlugin("SyncShield")->GetBaseDir() / TEXT("Resources");
-	Style->SetContentRoot(ContentDir);
+	// FindPlugin can return null (renamed or disabled plugin); don't dereference blind.
+	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("SyncShield"));
+	if (Plugin.IsValid())
+	{
+		Style->SetContentRoot(Plugin->GetBaseDir() / TEXT("Resources"));
+	}
 
 	// 2. Helper Lambda to make loading brushes cleaner
 	const FVector2D Icon16x16(16.0f, 16.0f);
@@ -69,7 +83,11 @@ TSharedRef<FSlateStyleSet> FSyncShieldStyle::Create()
 
 	// 3. Register your Icons here
 	// Assuming you have 'Icon128.png' in the Resources folder
-	Style->Set("SyncShield.PluginIcon", ImageBrush(TEXT("Icon128"), Icon128x128));
+	if (Plugin.IsValid())
+	{
+		Style->Set("SyncShield.PluginIcon", ImageBrush(TEXT("Icon128"), Icon128x128));
+		Style->Set("SyncShield.StatusIcon", ImageBrush(TEXT("Icon128"), Icon16x16));
+	}
 
 	// Example: If you create custom traffic light icons later
 	// Style->Set("SyncShield.Status.Green", ImageBrush(TEXT("Status_Green"), Icon16x16));

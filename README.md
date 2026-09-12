@@ -1,88 +1,55 @@
-<div align="center">
+# SyncShield Core 0.1
 
-<img width="1935" height="1080" alt="SyncShth" src="https://github.com/user-attachments/assets/b7ca8455-5b53-47b9-8d99-0e6ec12b227d" />
+Source-control status and guarded saves for the Unreal Editor. Free and open source under the [MIT license](LICENSE).
 
+Core 0.1 brings the current SyncShield implementation to OSS with **12 of 24 user-facing capabilities (50%)**. The [feature matrix](docs/FEATURES.md) defines the counting method and commercial boundary. This is a source plugin for **Unreal Engine 5.7 on Windows (Win64)**.
 
-# 🛡️ SyncShield Core
-**The Source Control Safety Net for Unreal Engine 5**
+## Features
 
-[![Unreal Engine](https://img.shields.io/badge/Unreal_Engine-5.2+-blue.svg)](https://www.unrealengine.com/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Win64-lightgray.svg)]()
+- A Level Editor toolbar showing unsaved assets, branch, pending changes, ahead/behind state, conflicts, and diagnostic details.
+- **Save All**, **Save Blueprints**, and **Save Current Level**, including dirty World Partition external actor/object packages belonging to that level.
+- Source-control status refresh before guarded saves, exclusion of packages reported locked by teammates, and checkout requests where the provider supports them.
+- A warning when you open an asset whose cached provider state reports another user's lock.
+- Unreal's native **Submit Content** dialog.
+- Git **Fetch**, optional **Auto Fetch**, **Pull (Rebase)**, and **Push** with state-based availability checks.
+- Plastic SCM / Unity Version Control workspace status and **Update Workspace**.
+- Git LFS detection, local lock counts, and a basic `.gitattributes` check for Unreal asset entries.
 
-</div>
+## Install
 
----
-[Watch it in action](https://www.youtube.com/watch?v=UCpiobdiJYM) <br>
-[Get the Pro version](https://www.fab.com/listings/dd5a848f-d6a5-4c5d-a766-87ea191fdd98) <br>
-[Discord support](https://discord.gg/nqYQ5mtmHb)
+1. Download `SyncShield-Core-0.1-UE5.7-source.zip` from the [0.1 release](https://github.com/gregorik/SyncShield-Core/releases/tag/v0.1).
+2. Extract its `SyncShield` folder into `<YourProject>/Plugins/`. The descriptor should be at `<YourProject>/Plugins/SyncShield/SyncShield.uplugin`.
+3. Close Unreal Editor, generate your C++ project's files, and build its Editor target with an Unreal-compatible Visual Studio toolchain.
+4. Open the project and enable SyncShield Core if prompted. The toolbar appears in the Level Editor.
 
-*[This repository deals with advanced bypasses of standard Unreal C++ bottlenecks. 🟢 Currently available for B2B consulting and remote contract/Co-Dev integration (CET Timezone). [Contact form.](https://gregorigin.com/contact.html)]*
+If cloning the repository, clone it directly into `<YourProject>/Plugins/SyncShield`. The source ZIP contains no precompiled binaries. A Blueprint-only project needs a C++ build host or an engine-specific plugin build using `RunUAT BuildPlugin` before installation.
 
-![SyncShieldProm1](https://github.com/user-attachments/assets/ffadb37f-8cf2-4cae-b4ec-2193eb42cc37)
+Core and commercial SyncShield use the same plugin/module name. Install one edition per project.
 
+## Configure and use
 
-Ever spent hours tweaking a Blueprint or meticulously painting a landscape, only to hit *Save All* and realize a teammate already locked the file in your source control system? 
+Open **Editor Preferences > Plugins > SyncShield** to set polling intervals, status notifications, optional auto-fetch, and explicit paths to `git` or `cm`. Leave executable paths empty to use `PATH`. Auto-fetch is off by default.
 
-**SyncShield Core** is a lightweight, battle-tested Unreal Engine 5 plugin designed to eliminate source control friction and protect your team from lost work and locked-file conflicts. It natively integrates with Unreal's Editor to warn you *before* you make changes, and safely catches you if you try to overwrite someone else's work.
+Use the SyncShield toolbar dropdown for guarded saves. Blueprint and current-level saves work without source control. An enabled Unreal source-control provider is required for checkout and teammate-lock information; Git CLI status alone cannot enforce remote locks. Perforce may supply native provider lock/checkout/submit behavior, but Core does not implement a Perforce CLI status probe or sync command.
 
-This is a major upgrade and more ambitious refactoring of the earlier [SafeSave plugin](https://github.com/gregorik/SafeSave) which remains fully functional in its own narrower scope.
+Pull requires an upstream, incoming commits, no unresolved conflicts or tracked modifications, and no unsaved editor assets. Push also requires outgoing commits and no incoming commits. Git may still reject an operation if the repository changes or an untracked file would be overwritten. Review the reported error and resolve it with your source-control tools.
 
-## ✨ Core Features
+## Scope
 
-### 🚫 Strict File Locking Protection
-SyncShield natively intercepts your "Save All" commands. Before any data is written, it rapidly probes your source control provider (Git, Plastic SCM, Perforce) for checkout status. If any package is locked by a teammate (`IsCheckedOutOther`), SyncShield **blocks the save for those specific files** with an explicit warning, while automatically issuing checkouts and safely saving the rest.
+The guard applies to **SyncShield's save actions**, not every Unreal save path, Ctrl+S, or autosave. Asset-open alerts use cached provider state and can miss a lock until the provider refreshes. Provider failures or stale lock data can limit protection; the plugin does not provide atomic distributed locking.
 
-### 🔔 Preemptive "Dropbox-Style" Alerts
-Don't wait until you save to find out a file is locked. SyncShield hooks directly into the Unreal Asset Editor. The moment you open a Blueprint, Material, or Data Asset that is locked by another developer, you instantly get a prominent Toast Notification warning you not to edit it.
+LFS information is diagnostic only; Core does not release locks automatically or provide an unlock command. The attributes check looks for `*.uasset` and `*.umap` entries and is not a complete audit of Git attribute precedence. Pull and workspace update modify files on disk; follow Unreal's reload prompts or reopen affected assets after external changes.
 
-### 🛠️ Streamlined Editor Toolbar
-Stop fumbling with external CLI windows or hidden context menus. SyncShield adds a dedicated, dynamic status widget right to the Level Editor Toolbar.
-* **Live Status Updates:** See your Branch, pending changes, and unsaved asset counts at a glance.
-* **One-Click Actions:** Save All, Submit Content, or Refresh Status.
-* **Native Git Integration:** Auto-Fetch (configurable interval), Pull (Rebase), and Push directly from the toolbar.
-* **Native Plastic SCM Integration:** One-click Workspace Update.
+Only UE 5.7 / Win64 is targeted by this release. See [validation](docs/VALIDATION.md) for actual checks and provider coverage. No telemetry, bundled third-party executables, demo assets, or runtime game module are included. Network operations use your own Git/Plastic configuration.
 
----
+## Development
 
-## 🚀 Installation
+With PowerShell 7 and UE 5.7 installed:
 
-1. Download or clone this repository.
-2. Place the `SyncShield` folder into your project's `Plugins` directory: `[YourProject]/Plugins/SyncShield/`.
-3. Right-click your `.uproject` file and select **Generate Visual Studio project files**.
-4. Compile your project.
-5. Launch the Unreal Editor. SyncShield will automatically appear in your Level Editor Toolbar.
+```powershell
+./Scripts/Test-Release.ps1 -EngineRoot 'F:\Epic Games\UE_5.7' -WorkRoot C:\sscore-test
+```
 
-## ⚙️ Configuration
+Use a new, short work directory. The script builds the plugin, installs the built artifact in a fresh Blueprint-only host, runs its automation suite, and rejects missing reports, failed tests, and unexpected test counts. Git must be available. Optional live Plastic workspace checks use `SYNCSHIELD_PLASTIC_WORKSPACE`.
 
-You can configure SyncShield's behavior via **Project Settings > Plugins > SyncShield**:
-* Adjust polling intervals for dirty checks and Git/Plastic SCM status.
-* Enable or disable **Auto Fetch** (for Git).
-* Toggle Toast Notifications on/off.
-
----
-
-## 💎 Upgrade to SyncShield Pro
-
-**SyncShield Core** provides the essential safety net for collaborative teams. For solo developers and studio environments looking for maximum data security and advanced workflow automation, check out **[SyncShield Pro on Fab (WIP)](https://www.fab.com/sellers/GregOrigin)**!
-
-**The Pro version includes everything in Core, plus:**
-
-* ⚔️ **Conflict Sentinel:** Stop merge conflicts *before* they happen. SyncShield Pro quietly tracks your locally dirty assets and runs background checks against your remote Git branch. If a teammate pushes a change to a file you are currently editing, you get an instant toast warning you of the impending collision.
-* 🌿 **Safe Branch Shifter:** Switch Git branches without playing Russian Roulette with the Unreal Editor. SyncShield Pro's "Safe Switch" pipeline protects your unsaved data, forcefully closes vulnerable asset editors, performs a clean checkout, and lets the Asset Registry hot-reload safely without crashing.
-* ⏪ **Local Save History & Time Travel:** SyncShield Pro quietly takes lightweight, localized snapshots of your assets every time you save. Broke a Blueprint? Click "Restore Latest Snapshot" to instantly revert the active asset to its last known good state—without needing to pull from remote source control.
-* 🛑 **Pre-Save Data Validation:** Automatically run custom or engine-level validation checks *before* assets are committed to disk. Prevent broken references, bad naming conventions, or uncompiled Blueprints from ever reaching your repository.
-* 📂 **Advanced Save Profiles:** Stop saving everything just to be safe. Use precision save commands:
-  * *Save Blueprints Only*
-  * *Save Current Level Only*
-  * *Save Recently Touched (Time-windowed)*
-
----
-
-## 🤝 Contributing
-Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](../../issues). 
-
-## 📜 License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. 
-
-*Copyright (c) 2026 GregOrigin. All Rights Reserved.*
+Issues and contributions are welcome on [GitHub](https://github.com/gregorik/SyncShield-Core/issues). For history, validation, Conflict Sentinel, and advanced Git workflows, see [commercial SyncShield](https://www.fab.com/listings/dd5a848f-d6a5-4c5d-a766-87ea191fdd98).

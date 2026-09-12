@@ -6,6 +6,7 @@
 #include "HAL/FileManager.h"
 #include "HAL/PlatformMisc.h"
 #include "HAL/IConsoleManager.h"
+#include "Internationalization/Regex.h"
 #include "ISettingsCategory.h"
 #include "ISettingsContainer.h"
 #include "ISettingsModule.h"
@@ -15,17 +16,61 @@
 #include "Misc/Paths.h"
 #include "Modules/ModuleManager.h"
 #include "SSyncShieldToolbar.h"
+#include "SyncShieldProcess.h"
+#include "SyncShieldGitProbe.h"
+#include "SyncShieldPlasticProbe.h"
+#include "SyncShieldStatusPresenter.h"
+#include "SyncShieldAsyncRunner.h"
+#include "SyncShieldCommands.h"
+
+#include "Widgets/Layout/SBox.h"
+#include "SyncShieldSaveProfileService.h"
+#include "SyncShieldSettings.h"
 #include "Styling/AppStyle.h"
 #include "ToolMenu.h"
 #include "ToolMenuSection.h"
 #include "ToolMenus.h"
 #include "Widgets/SWidget.h"
+#include "Engine/Blueprint.h"
+#include "Engine/Texture2D.h"
+#include "UObject/Package.h"
+
+class FSyncShieldServiceTestAccessor
+{
+public:
+	static TArray<UPackage*> CollectBlueprints(const FSyncShieldSaveProfileService& Service)
+	{
+		return Service.CollectPackagesForProfile(FSyncShieldSaveProfileService::ESaveProfile::DirtyBlueprints);
+	}
+};
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSyncShieldBlueprintProfileTest,
+	"SyncShield.Editor.Services.BlueprintProfile",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSyncShieldBlueprintProfileTest::RunTest(const FString& Parameters)
+{
+	const FString Root = TEXT("/Game/CoreAutomation/") + FGuid::NewGuid().ToString(EGuidFormats::Digits);
+	UPackage* BlueprintPackage = CreatePackage(*(Root + TEXT("/BP_Test")));
+	UPackage* TexturePackage = CreatePackage(*(Root + TEXT("/T_Test")));
+	NewObject<UBlueprint>(BlueprintPackage, TEXT("BP_Test"), RF_Public | RF_Standalone);
+	NewObject<UTexture2D>(TexturePackage, TEXT("T_Test"), RF_Public | RF_Standalone);
+	BlueprintPackage->SetDirtyFlag(true);
+	TexturePackage->SetDirtyFlag(true);
+	FSyncShieldSaveProfileService Service;
+	const TArray<UPackage*> Packages = FSyncShieldServiceTestAccessor::CollectBlueprints(Service);
+	TestTrue(TEXT("Dirty Blueprint is selected"), Packages.Contains(BlueprintPackage));
+	TestFalse(TEXT("Dirty texture is excluded"), Packages.Contains(TexturePackage));
+	BlueprintPackage->SetDirtyFlag(false);
+	TestFalse(TEXT("Clean Blueprint is excluded"), FSyncShieldServiceTestAccessor::CollectBlueprints(Service).Contains(BlueprintPackage));
+	TexturePackage->SetDirtyFlag(false);
+	return true;
+}
 
 class FSyncShieldToolbarTestAccessor
 {
 public:
-	using FStatusSnapshot = SSyncShieldToolbar::FSourceControlStatus;
-
 	enum class EProvider : uint8
 	{
 		None,
@@ -65,19 +110,19 @@ public:
 		const FString& WorkspaceName,
 		const FString& LastError)
 	{
-		SSyncShieldToolbar::FSourceControlStatus& Status = Toolbar->SourceControlStatus;
-		Status = SSyncShieldToolbar::FSourceControlStatus();
+		FSyncShieldSourceControlStatus& Status = Toolbar->SourceControlStatus;
+		Status = FSyncShieldSourceControlStatus();
 
 		switch (Provider)
 		{
 		case EProvider::Git:
-			Status.Provider = SSyncShieldToolbar::ESourceControlProvider::Git;
+			Status.Provider = ESyncShieldProvider::Git;
 			break;
 		case EProvider::Plastic:
-			Status.Provider = SSyncShieldToolbar::ESourceControlProvider::Plastic;
+			Status.Provider = ESyncShieldProvider::Plastic;
 			break;
 		default:
-			Status.Provider = SSyncShieldToolbar::ESourceControlProvider::None;
+			Status.Provider = ESyncShieldProvider::None;
 			break;
 		}
 
@@ -99,24 +144,14 @@ public:
 		Status.LastUpdateUtc = FDateTime::UtcNow();
 	}
 
-	static void ApplyStatusSnapshot(const TSharedRef<SSyncShieldToolbar>& Toolbar, const FStatusSnapshot& Status)
+	static void ApplyStatusSnapshot(const TSharedRef<SSyncShieldToolbar>& Toolbar, const FSyncShieldSourceControlStatus& Status)
 	{
 		Toolbar->SourceControlStatus = Status;
 	}
 
-	static bool TryPopulateGitStatus(const TSharedRef<SSyncShieldToolbar>& Toolbar, const FString& ProjectDir, FStatusSnapshot& OutStatus, FString& OutError)
+	static FString GetStatusChangeKey(const TSharedRef<SSyncShieldToolbar>& Toolbar)
 	{
-		return Toolbar->TryPopulateGitStatus(ProjectDir, OutStatus, OutError);
-	}
-
-	static bool TryPopulatePlasticStatus(const TSharedRef<SSyncShieldToolbar>& Toolbar, const FString& ProjectDir, FStatusSnapshot& OutStatus, FString& OutError)
-	{
-		return Toolbar->TryPopulatePlasticStatus(ProjectDir, OutStatus, OutError);
-	}
-
-	static bool RunGit(const TSharedRef<SSyncShieldToolbar>& Toolbar, const FString& WorkingDir, const FString& Args, FString& OutStdOut, FString& OutStdErr, int32& OutExitCode)
-	{
-		return Toolbar->RunGit(Args, WorkingDir, OutStdOut, OutStdErr, OutExitCode);
+		return Toolbar->GetStatusChangeKey();
 	}
 
 	static FString GetLabel(const TSharedRef<SSyncShieldToolbar>& Toolbar)
@@ -162,6 +197,13 @@ public:
 	static bool IsStatusDegraded(const TSharedRef<SSyncShieldToolbar>& Toolbar)
 	{
 		return Toolbar->IsStatusDegraded(Toolbar->GetStatusSnapshot());
+	}
+
+	static void SetLfsState(const TSharedRef<SSyncShieldToolbar>& Toolbar, bool bDetected, int32 LockCount, const TArray<FString>& LockedFiles)
+	{
+		Toolbar->SourceControlStatus.bLfsDetected = bDetected;
+		Toolbar->SourceControlStatus.LfsLockCount = LockCount;
+		Toolbar->SourceControlStatus.LfsLockedFiles = LockedFiles;
 	}
 };
 
@@ -219,7 +261,7 @@ namespace
 		FString StdErr;
 		int32 ExitCode = INDEX_NONE;
 
-		const bool bLaunched = FSyncShieldToolbarTestAccessor::RunGit(Toolbar, WorkingDir, Args, StdOut, StdErr, ExitCode);
+		const bool bLaunched = FSyncShieldProcess::RunGit(Args, WorkingDir, StdOut, StdErr, ExitCode);
 		Test.TestTrue(*FString::Printf(TEXT("%s launched"), *Description), bLaunched);
 		Test.TestEqual(*FString::Printf(TEXT("%s exit code"), *Description), ExitCode, 0);
 
@@ -291,8 +333,9 @@ bool FSyncShieldEditorIntegrationTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("SyncShield toolbar section exists"), SyncShieldSectionMenu);
 	TestTrue(TEXT("SyncShield toolbar entry exists"), ToolbarMenu->ContainsEntry(TEXT("SyncShieldStatusWidget")));
 
+	// Core ships no commands that create demo assets in a customer project.
 	IConsoleObject* StressTestCommand = IConsoleManager::Get().FindConsoleObject(TEXT("SyncShield.StressTest"));
-	TestNotNull(TEXT("SyncShield stress-test command is registered"), StressTestCommand);
+	TestNull(TEXT("Core does not register demo commands"), StressTestCommand);
 
 	return true;
 }
@@ -527,9 +570,9 @@ bool FSyncShieldGitDisposableEndToEndTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	FSyncShieldToolbarTestAccessor::FStatusSnapshot Status;
+	FSyncShieldSourceControlStatus Status;
 	FString Error;
-	bool bRepoFound = FSyncShieldToolbarTestAccessor::TryPopulateGitStatus(Toolbar, RepoDir, Status, Error);
+	bool bRepoFound = FSyncShieldGitProbe::Populate(RepoDir, Status, Error);
 	TestTrue(TEXT("Disposable git repo is detected"), bRepoFound);
 	TestTrue(TEXT("Disposable git client is available"), Status.bClientAvailable);
 	TestTrue(TEXT("Disposable git repo is marked present"), Status.bRepo);
@@ -551,7 +594,7 @@ bool FSyncShieldGitDisposableEndToEndTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	bRepoFound = FSyncShieldToolbarTestAccessor::TryPopulateGitStatus(Toolbar, RepoDir, Status, Error);
+	bRepoFound = FSyncShieldGitProbe::Populate(RepoDir, Status, Error);
 	TestTrue(TEXT("Disposable git repo remains detected with untracked files"), bRepoFound);
 	TestEqual(TEXT("Disposable git untracked count reflects new file"), Status.Untracked, 1);
 	TestEqual(TEXT("Disposable git staged count remains zero with untracked file"), Status.Staged, 0);
@@ -567,7 +610,7 @@ bool FSyncShieldGitDisposableEndToEndTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	bRepoFound = FSyncShieldToolbarTestAccessor::TryPopulateGitStatus(Toolbar, RepoDir, Status, Error);
+	bRepoFound = FSyncShieldGitProbe::Populate(RepoDir, Status, Error);
 	TestTrue(TEXT("Disposable git repo remains detected with staged files"), bRepoFound);
 	TestEqual(TEXT("Disposable git staged count reflects staged file"), Status.Staged, 1);
 	TestEqual(TEXT("Disposable git untracked count resets after staging"), Status.Untracked, 0);
@@ -580,7 +623,7 @@ bool FSyncShieldGitDisposableEndToEndTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	bRepoFound = FSyncShieldToolbarTestAccessor::TryPopulateGitStatus(Toolbar, RepoDir, Status, Error);
+	bRepoFound = FSyncShieldGitProbe::Populate(RepoDir, Status, Error);
 	TestTrue(TEXT("Disposable git repo remains detected with unstaged files"), bRepoFound);
 	TestEqual(TEXT("Disposable git staged count stays at one while one file is unstaged"), Status.Staged, 1);
 	TestEqual(TEXT("Disposable git unstaged count reflects tracked edit"), Status.Unstaged, 1);
@@ -597,7 +640,7 @@ bool FSyncShieldGitDisposableEndToEndTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	bRepoFound = FSyncShieldToolbarTestAccessor::TryPopulateGitStatus(Toolbar, RepoDir, Status, Error);
+	bRepoFound = FSyncShieldGitProbe::Populate(RepoDir, Status, Error);
 	TestTrue(TEXT("Disposable git repo remains detected after local commit"), bRepoFound);
 	TestEqual(TEXT("Disposable git ahead count reflects local commit"), Status.Ahead, 1);
 	TestEqual(TEXT("Disposable git behind count remains zero after local commit"), Status.Behind, 0);
@@ -614,7 +657,7 @@ bool FSyncShieldGitDisposableEndToEndTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	bRepoFound = FSyncShieldToolbarTestAccessor::TryPopulateGitStatus(Toolbar, RepoDir, Status, Error);
+	bRepoFound = FSyncShieldGitProbe::Populate(RepoDir, Status, Error);
 	TestTrue(TEXT("Disposable git repo remains detected after pushing local commit"), bRepoFound);
 	TestEqual(TEXT("Disposable git ahead count resets after push"), Status.Ahead, 0);
 	TestEqual(TEXT("Disposable git behind count remains zero after push"), Status.Behind, 0);
@@ -652,7 +695,7 @@ bool FSyncShieldGitDisposableEndToEndTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	bRepoFound = FSyncShieldToolbarTestAccessor::TryPopulateGitStatus(Toolbar, RepoDir, Status, Error);
+	bRepoFound = FSyncShieldGitProbe::Populate(RepoDir, Status, Error);
 	TestTrue(TEXT("Disposable git repo remains detected after fetching remote-only commit"), bRepoFound);
 	TestTrue(TEXT("Disposable git upstream remains configured after fetch"), Status.bHasUpstream);
 	TestEqual(TEXT("Disposable git behind count reflects remote-only commit"), Status.Behind, 1);
@@ -766,9 +809,9 @@ bool FSyncShieldGitDivergedEndToEndTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	FSyncShieldToolbarTestAccessor::FStatusSnapshot Status;
+	FSyncShieldSourceControlStatus Status;
 	FString Error;
-	const bool bRepoFound = FSyncShieldToolbarTestAccessor::TryPopulateGitStatus(Toolbar, RepoDir, Status, Error);
+	const bool bRepoFound = FSyncShieldGitProbe::Populate(RepoDir, Status, Error);
 	TestTrue(TEXT("Diverged disposable git repo is detected"), bRepoFound);
 	TestTrue(TEXT("Diverged disposable git upstream is detected"), Status.bHasUpstream);
 	TestFalse(TEXT("Diverged disposable git has no status error"), Status.bStatusError);
@@ -799,11 +842,11 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FSyncShieldPlasticLiveProbeTest::RunTest(const FString& Parameters)
 {
 	TSharedRef<SSyncShieldToolbar> Toolbar = FSyncShieldToolbarTestAccessor::CreateToolbar();
-	FSyncShieldToolbarTestAccessor::FStatusSnapshot Status;
+	FSyncShieldSourceControlStatus Status;
 	FString Error;
 
 	const FString ProjectDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
-	const bool bRepoFound = FSyncShieldToolbarTestAccessor::TryPopulatePlasticStatus(Toolbar, ProjectDir, Status, Error);
+	const bool bRepoFound = FSyncShieldPlasticProbe::Populate(ProjectDir, Status, Error);
 
 	if (!Status.bClientAvailable)
 	{
@@ -858,7 +901,7 @@ bool FSyncShieldPlasticConfiguredWorkspaceTest::RunTest(const FString& Parameter
 	}
 
 	TSharedRef<SSyncShieldToolbar> Toolbar = FSyncShieldToolbarTestAccessor::CreateToolbar();
-	FSyncShieldToolbarTestAccessor::FStatusSnapshot Status;
+	FSyncShieldSourceControlStatus Status;
 	FString Error;
 
 	TestTrue(TEXT("Configured Plastic workspace path exists"), IFileManager::Get().DirectoryExists(*WorkspacePath));
@@ -867,7 +910,7 @@ bool FSyncShieldPlasticConfiguredWorkspaceTest::RunTest(const FString& Parameter
 		return false;
 	}
 
-	const bool bRepoFound = FSyncShieldToolbarTestAccessor::TryPopulatePlasticStatus(Toolbar, WorkspacePath, Status, Error);
+	const bool bRepoFound = FSyncShieldPlasticProbe::Populate(WorkspacePath, Status, Error);
 	TestTrue(TEXT("Configured Plastic workspace is detected"), bRepoFound);
 	TestTrue(TEXT("Configured Plastic workspace reports client availability"), Status.bClientAvailable);
 	TestTrue(TEXT("Configured Plastic workspace reports repo presence"), Status.bRepo);
@@ -882,5 +925,467 @@ bool FSyncShieldPlasticConfiguredWorkspaceTest::RunTest(const FString& Parameter
 	return true;
 }
 
-#endif
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSyncShieldProcessMissingExecutableTest,
+	"SyncShield.Editor.Process.MissingExecutable",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
+bool FSyncShieldProcessMissingExecutableTest::RunTest(const FString& Parameters)
+{
+	TSharedRef<SSyncShieldToolbar> Toolbar = FSyncShieldToolbarTestAccessor::CreateToolbar();
+
+	FString StdOut;
+	FString StdErr;
+	int32 ExitCode = 0;
+	const FString WorkingDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
+
+	const bool bLaunched = FSyncShieldProcess::Run(
+		TEXT("syncshield-definitely-not-a-real-executable.exe"),
+		TEXT("--version"),
+		WorkingDir,
+		StdOut,
+		StdErr,
+		ExitCode,
+		30.0f);
+
+	TestFalse(TEXT("Launching a missing executable reports failure"), bLaunched);
+	TestNotEqual(TEXT("Missing executable does not report a success exit code"), ExitCode, 0);
+	TestTrue(TEXT("Missing executable produces a diagnostic"), !StdErr.IsEmpty());
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSyncShieldProcessExitCodeTest,
+	"SyncShield.Editor.Process.ExitCodeAndOutput",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSyncShieldProcessExitCodeTest::RunTest(const FString& Parameters)
+{
+	TSharedRef<SSyncShieldToolbar> Toolbar = FSyncShieldToolbarTestAccessor::CreateToolbar();
+	const FString WorkingDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
+
+	// A git command that fails wherever it runs. Asking for a nonexistent ref fails
+	// both inside a repository ("needed a single revision") and outside one ("not a
+	// git repository"), so this does not depend on whether the project itself is
+	// under source control -- which it normally is.
+	const FScopedAutomationDirectory TempRoot(MakeAutomationDirectoryPath(TEXT("ProcessExit")));
+
+	FString StdOut;
+	FString StdErr;
+	int32 ExitCode = 0;
+	const bool bLaunched = FSyncShieldProcess::RunGit(
+		TEXT("rev-parse --verify refs/heads/syncshield-automation-absent-ref"),
+		TempRoot.GetPath(),
+		StdOut,
+		StdErr,
+		ExitCode);
+
+	TestTrue(TEXT("An installed git executable launches"), bLaunched);
+	TestNotEqual(TEXT("A failing git command reports a non-zero exit code"), ExitCode, 0);
+	TestTrue(TEXT("git failure output is captured"), !StdErr.IsEmpty());
+
+	// Output that does not end in a newline must still be captured in full.
+	StdOut.Reset();
+	StdErr.Reset();
+	ExitCode = 0;
+	const bool bVersionLaunched = FSyncShieldProcess::RunGit(
+		TEXT("--version"), WorkingDir, StdOut, StdErr, ExitCode);
+
+	TestTrue(TEXT("git --version launches"), bVersionLaunched);
+	TestEqual(TEXT("git --version succeeds"), ExitCode, 0);
+	TestTrue(TEXT("git --version output is captured"), StdOut.Contains(TEXT("git version")));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSyncShieldExecutableOverrideTest,
+	"SyncShield.Editor.Settings.ExecutableOverride",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSyncShieldExecutableOverrideTest::RunTest(const FString& Parameters)
+{
+	TSharedRef<SSyncShieldToolbar> Toolbar = FSyncShieldToolbarTestAccessor::CreateToolbar();
+	USyncShieldSettings* Settings = GetMutableDefault<USyncShieldSettings>();
+	TestNotNull(TEXT("SyncShield settings are available"), Settings);
+	if (!Settings)
+	{
+		return false;
+	}
+
+	const FString SavedGit = Settings->GitExecutablePath;
+	const FString SavedPlastic = Settings->PlasticExecutablePath;
+
+	// Empty override falls back to PATH resolution.
+	Settings->GitExecutablePath = FString();
+	Settings->PlasticExecutablePath = FString();
+	TestTrue(
+		TEXT("Empty Git override resolves a bare executable name"),
+		FSyncShieldProcess::GetGitExecutable().Contains(TEXT("git")));
+	TestTrue(
+		TEXT("Empty Plastic override resolves a bare executable name"),
+		FSyncShieldProcess::GetPlasticExecutable().Contains(TEXT("cm")));
+
+	// An explicit path is used verbatim, which is what makes the plugin usable on
+	// macOS and Linux where GUI processes do not inherit the login shell PATH.
+	const FString CustomGit = TEXT("/opt/homebrew/bin/git");
+	const FString CustomPlastic = TEXT("/usr/local/bin/cm");
+	Settings->GitExecutablePath = CustomGit;
+	Settings->PlasticExecutablePath = CustomPlastic;
+
+	TestEqual(
+		TEXT("Explicit Git path is used verbatim"),
+		FSyncShieldProcess::GetGitExecutable(), CustomGit);
+	TestEqual(
+		TEXT("Explicit Plastic path is used verbatim"),
+		FSyncShieldProcess::GetPlasticExecutable(), CustomPlastic);
+
+	// Surrounding whitespace should not defeat the override.
+	Settings->GitExecutablePath = FString::Printf(TEXT("  %s  "), *CustomGit);
+	TestEqual(
+		TEXT("Explicit Git path is trimmed"),
+		FSyncShieldProcess::GetGitExecutable(), CustomGit);
+
+	Settings->GitExecutablePath = SavedGit;
+	Settings->PlasticExecutablePath = SavedPlastic;
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSyncShieldUntrackedDoesNotBlockSyncTest,
+	"SyncShield.Editor.Git.UntrackedDoesNotBlockSync",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSyncShieldUntrackedDoesNotBlockSyncTest::RunTest(const FString& Parameters)
+{
+	TSharedRef<SSyncShieldToolbar> Toolbar = FSyncShieldToolbarTestAccessor::CreateToolbar();
+	FSyncShieldToolbarTestAccessor::SetUnsavedState(Toolbar, false, 0, FString());
+
+	// Ahead of upstream, nothing staged or modified, but untracked files present.
+	// Untracked files do not prevent a push, so the action must stay enabled.
+	FSyncShieldToolbarTestAccessor::SetStatus(
+		Toolbar, FSyncShieldToolbarTestAccessor::EProvider::Git,
+		true, true, false, false, true, false,
+		/*Ahead*/ 2, /*Behind*/ 0, /*Staged*/ 0, /*Unstaged*/ 0, /*Untracked*/ 7,
+		TEXT("main"), TEXT("C:/Repo"), FString(), FString());
+	TestTrue(TEXT("Push stays enabled when only untracked files are present"),
+		FSyncShieldToolbarTestAccessor::CanExecuteGitPush(Toolbar));
+
+	// Behind upstream with untracked files: pull must stay enabled.
+	FSyncShieldToolbarTestAccessor::SetStatus(
+		Toolbar, FSyncShieldToolbarTestAccessor::EProvider::Git,
+		true, true, false, false, true, false,
+		0, 3, 0, 0, 7,
+		TEXT("main"), TEXT("C:/Repo"), FString(), FString());
+	TestTrue(TEXT("Pull stays enabled when only untracked files are present"),
+		FSyncShieldToolbarTestAccessor::CanExecuteGitPull(Toolbar));
+
+	// Tracked modifications still block both, since they would be clobbered.
+	FSyncShieldToolbarTestAccessor::SetStatus(
+		Toolbar, FSyncShieldToolbarTestAccessor::EProvider::Git,
+		true, true, false, false, true, false,
+		0, 3, 0, 1, 0,
+		TEXT("main"), TEXT("C:/Repo"), FString(), FString());
+	TestFalse(TEXT("Pull is blocked by modified tracked files"),
+		FSyncShieldToolbarTestAccessor::CanExecuteGitPull(Toolbar));
+
+	// Porcelain's unmerged entries set the conflict flag without incrementing
+	// staged/unstaged counts. A zero count must not enable synchronization.
+	FSyncShieldSourceControlStatus Conflict;
+	Conflict.Provider = ESyncShieldProvider::Git;
+	Conflict.bClientAvailable = Conflict.bRepo = Conflict.bHasUpstream = true;
+	Conflict.Behind = 1;
+	FSyncShieldGitProbe::ParseStatusOutput(TEXT("u UU N... 100644 100644 100644 100644 a b c Content/BP_Test.uasset\n"), Conflict);
+	FSyncShieldToolbarTestAccessor::ApplyStatusSnapshot(Toolbar, Conflict);
+	TestFalse(TEXT("Pull is blocked by unmerged files with zero ordinary change counts"),
+		FSyncShieldToolbarTestAccessor::CanExecuteGitPull(Toolbar));
+	Conflict.Behind = 0;
+	Conflict.Ahead = 1;
+	FSyncShieldToolbarTestAccessor::ApplyStatusSnapshot(Toolbar, Conflict);
+	TestFalse(TEXT("Push is blocked by unresolved conflicts"),
+		FSyncShieldToolbarTestAccessor::CanExecuteGitPush(Toolbar));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSyncShieldLfsLockParsingTest,
+	"SyncShield.Editor.Git.LfsLockParsing",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSyncShieldLfsLockParsingTest::RunTest(const FString& Parameters)
+{
+	// Real `git lfs locks --json` output shape.
+	const FString Json = TEXT(
+		"[{\"id\":\"101\",\"path\":\"Content/Maps/Main.umap\",\"owner\":{\"name\":\"ada\"},"
+		"\"locked_at\":\"2026-01-01T00:00:00Z\"},"
+		"{\"id\":\"102\",\"path\":\"Content/Blueprints/BP Player.uasset\",\"owner\":{\"name\":\"ada\"},"
+		"\"locked_at\":\"2026-01-02T00:00:00Z\"}]");
+
+	TArray<FString> Locked;
+	FSyncShieldGitProbe::ParseLfsLocksJson(Json, Locked);
+
+	TestEqual(TEXT("Two locks are parsed"), Locked.Num(), 2);
+	if (Locked.Num() == 2)
+	{
+		TestEqual(TEXT("First lock path"), Locked[0], FString(TEXT("Content/Maps/Main.umap")));
+		// A path containing a space must survive intact; the old tab split lost it.
+		TestEqual(TEXT("Lock path with a space is preserved"), Locked[1], FString(TEXT("Content/Blueprints/BP Player.uasset")));
+	}
+
+	TArray<FString> Empty;
+	FSyncShieldGitProbe::ParseLfsLocksJson(TEXT("[]"), Empty);
+	TestEqual(TEXT("Empty lock list parses to zero entries"), Empty.Num(), 0);
+
+	TArray<FString> Garbage;
+	FSyncShieldGitProbe::ParseLfsLocksJson(TEXT("not json"), Garbage);
+	TestEqual(TEXT("Malformed lock output yields no entries"), Garbage.Num(), 0);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSyncShieldLfsDetectionTest,
+	"SyncShield.Editor.Git.LfsDetection",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSyncShieldLfsDetectionTest::RunTest(const FString& Parameters)
+{
+	TestTrue(
+		TEXT("A repo tracking uasset through LFS is detected"),
+		FSyncShieldGitProbe::DetectLfsFromGitattributes(
+			TEXT("*.uasset filter=lfs diff=lfs merge=lfs -text lockable\n")));
+
+	TestFalse(
+		TEXT("A repo with no LFS filter is not detected"),
+		FSyncShieldGitProbe::DetectLfsFromGitattributes(
+			TEXT("*.uasset binary\n*.umap binary\n")));
+
+	TestFalse(
+		TEXT("An absent .gitattributes is not detected"),
+		FSyncShieldGitProbe::DetectLfsFromGitattributes(FString()));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSyncShieldLevelScopeTest,
+	"SyncShield.Editor.Services.LevelScope",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSyncShieldLevelScopeTest::RunTest(const FString& Parameters)
+{
+	const FString World = TEXT("/Game/Maps/Main");
+
+	TestTrue(
+		TEXT("The level package itself is in scope"),
+		FSyncShieldSaveProfileService::IsPackageInLevelScope(World, World));
+
+	// World Partition stores each actor in its own package outside the .umap, so a
+	// level save that ignores these silently drops the user's actor edits.
+	TestTrue(
+		TEXT("An external actor package is in scope"),
+		FSyncShieldSaveProfileService::IsPackageInLevelScope(
+			TEXT("/Game/__ExternalActors__/Maps/Main/A/B/0FDX8N1PC2Q"), World));
+
+	TestTrue(
+		TEXT("An external object package is in scope"),
+		FSyncShieldSaveProfileService::IsPackageInLevelScope(
+			TEXT("/Game/__ExternalObjects__/Maps/Main/A/B/0FDX8N1PC2Q"), World));
+
+	TestFalse(
+		TEXT("A different level is out of scope"),
+		FSyncShieldSaveProfileService::IsPackageInLevelScope(TEXT("/Game/Maps/Other"), World));
+
+	TestFalse(
+		TEXT("Another level's external actors are out of scope"),
+		FSyncShieldSaveProfileService::IsPackageInLevelScope(
+			TEXT("/Game/__ExternalActors__/Maps/Other/A/B/0FDX8N1PC2Q"), World));
+
+	TestFalse(
+		TEXT("An unrelated content package is out of scope"),
+		FSyncShieldSaveProfileService::IsPackageInLevelScope(TEXT("/Game/Heroes/BP_Player"), World));
+
+	TestFalse(
+		TEXT("An empty world name matches nothing"),
+		FSyncShieldSaveProfileService::IsPackageInLevelScope(TEXT("/Game/Maps/Main"), FString()));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSyncShieldStatusToastKeyTest,
+	"SyncShield.Editor.Notifications.StatusChangeKey",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSyncShieldStatusToastKeyTest::RunTest(const FString& Parameters)
+{
+	TSharedRef<SSyncShieldToolbar> Toolbar = FSyncShieldToolbarTestAccessor::CreateToolbar();
+	FSyncShieldToolbarTestAccessor::SetStatus(
+		Toolbar, FSyncShieldToolbarTestAccessor::EProvider::Git,
+		true, true, false, false, true, false,
+		0, 0, 0, 0, 0,
+		TEXT("main"), TEXT("C:/Repo"), FString(), FString());
+
+	FSyncShieldToolbarTestAccessor::SetUnsavedState(Toolbar, true, 3, TEXT("/Game/A"));
+	const FString KeyAtThree = FSyncShieldToolbarTestAccessor::GetStatusChangeKey(Toolbar);
+
+	// Dirtying one more asset changes the visible label but is not a state change,
+	// so it must not re-key the toast; otherwise every edit fires a notification.
+	FSyncShieldToolbarTestAccessor::SetUnsavedState(Toolbar, true, 4, TEXT("/Game/A"));
+	const FString KeyAtFour = FSyncShieldToolbarTestAccessor::GetStatusChangeKey(Toolbar);
+
+	TestEqual(TEXT("Unsaved count alone does not change the toast key"), KeyAtFour, KeyAtThree);
+	TestNotEqual(
+		TEXT("The visible label still reports the new count"),
+		FSyncShieldToolbarTestAccessor::GetLabel(Toolbar), FString(TEXT("main | Unsaved 3")));
+
+	// Going from "has unsaved work" to "clean" is a real transition.
+	FSyncShieldToolbarTestAccessor::SetUnsavedState(Toolbar, false, 0, FString());
+	TestNotEqual(
+		TEXT("Becoming clean does change the toast key"),
+		FSyncShieldToolbarTestAccessor::GetStatusChangeKey(Toolbar), KeyAtThree);
+
+	// So is falling behind the remote.
+	const FString CleanKey = FSyncShieldToolbarTestAccessor::GetStatusChangeKey(Toolbar);
+	FSyncShieldToolbarTestAccessor::SetStatus(
+		Toolbar, FSyncShieldToolbarTestAccessor::EProvider::Git,
+		true, true, false, false, true, false,
+		0, 5, 0, 0, 0,
+		TEXT("main"), TEXT("C:/Repo"), FString(), FString());
+	TestNotEqual(
+		TEXT("Falling behind the remote changes the toast key"),
+		FSyncShieldToolbarTestAccessor::GetStatusChangeKey(Toolbar), CleanKey);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSyncShieldPresenterWidgetFreeTest,
+	"SyncShield.Editor.Presentation.WidgetFree",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSyncShieldPresenterWidgetFreeTest::RunTest(const FString& Parameters)
+{
+	// No SNew, no accessor, no friend: the presenter is a pure function of state.
+	FSyncShieldSourceControlStatus Status;
+	Status.Provider = ESyncShieldProvider::Git;
+	Status.bClientAvailable = true;
+	Status.bRepo = true;
+	Status.bHasUpstream = true;
+	Status.Branch = TEXT("main");
+	Status.Behind = 3;
+
+	FSyncShieldEditorState Editor;
+
+	TestEqual(TEXT("Behind upstream is reported in the label"),
+		FSyncShieldStatusPresenter::GetLabel(Status, Editor).ToString(),
+		FString(TEXT("main | Behind 3")));
+
+	Editor.bHasUnsavedAssets = true;
+	Editor.UnsavedAssetCount = 2;
+	TestEqual(TEXT("Unsaved assets take precedence over behind-count in the label"),
+		FSyncShieldStatusPresenter::GetLabel(Status, Editor).ToString(),
+		FString(TEXT("main | Unsaved 2")));
+
+	TestTrue(TEXT("Unsaved work marks the status degraded"),
+		FSyncShieldStatusPresenter::IsStatusDegraded(Status, Editor));
+
+	return true;
+}
+
+/**
+ * Test state that has to outlive RunTest: the latent command below runs after
+ * RunTest has already returned, so anything the continuation needs -- the owner
+ * included -- must be held here rather than on RunTest's stack.
+ */
+struct FSyncShieldRunnerTestState
+{
+	bool bDone = false;
+	bool bOnGameThread = false;
+	int32 Value = 0;
+	TSharedPtr<SWidget> Owner;
+};
+
+/** Polls until the runner's continuation lands, or fails the test after a timeout. */
+DEFINE_LATENT_AUTOMATION_COMMAND_THREE_PARAMETER(
+	FWaitForRunnerResult,
+	FAutomationTestBase*, Test,
+	TSharedPtr<FSyncShieldRunnerTestState>, State,
+	double, Deadline);
+
+bool FWaitForRunnerResult::Update()
+{
+	if (State->bDone)
+	{
+		Test->TestTrue(TEXT("Continuation ran on the game thread"), State->bOnGameThread);
+		Test->TestEqual(TEXT("Result crosses the thread boundary intact"), State->Value, 42);
+		return true;
+	}
+	if (FPlatformTime::Seconds() > Deadline)
+	{
+		Test->AddError(TEXT("RunForOwner continuation never arrived"));
+		return true;
+	}
+	return false;   // poll again next tick
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSyncShieldAsyncRunnerTest,
+	"SyncShield.Editor.Async.RunForOwner",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSyncShieldAsyncRunnerTest::RunTest(const FString& Parameters)
+{
+	TSharedPtr<FSyncShieldRunnerTestState> State = MakeShared<FSyncShieldRunnerTestState>();
+	State->Owner = SNew(SBox);
+
+	SyncShieldAsync::RunForOwner<int32>(
+		TWeakPtr<SWidget>(State->Owner),
+		[]() { return 42; },
+		[State](const int32& Result)
+		{
+			State->Value = Result;
+			State->bOnGameThread = IsInGameThread();
+			State->bDone = true;
+		});
+
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitForRunnerResult(this, State,
+		FPlatformTime::Seconds() + 10.0));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSyncShieldAsyncRunnerDeadOwnerTest,
+	"SyncShield.Editor.Async.RunForOwnerDeadOwner",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSyncShieldAsyncRunnerDeadOwnerTest::RunTest(const FString& Parameters)
+{
+	// The bug this whole seam exists to prevent: a continuation firing against an
+	// owner that is already gone.
+	TSharedPtr<bool> bRan = MakeShared<bool>(false);
+	TWeakPtr<SWidget> DeadOwner;
+	{
+		TSharedPtr<SWidget> Doomed = SNew(SBox);
+		DeadOwner = Doomed;
+	}
+	TestFalse(TEXT("Owner is already dead before dispatch"), DeadOwner.IsValid());
+
+	SyncShieldAsync::RunForOwner<int32>(
+		DeadOwner,
+		[]() { return 7; },
+		[bRan](const int32&) { *bRan = true; });
+
+	ADD_LATENT_AUTOMATION_COMMAND(FDelayedFunctionLatentCommand(
+		[this, bRan]()
+		{
+			TestFalse(TEXT("A dead owner suppresses the continuation"), *bRan);
+		}, 2.0f));
+
+	return true;
+}
+
+#endif

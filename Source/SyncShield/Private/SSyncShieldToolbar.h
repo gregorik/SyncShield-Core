@@ -3,6 +3,11 @@
 
 #include "CoreMinimal.h"
 #include "Widgets/SCompoundWidget.h"
+#include "SyncShieldSourceControlStatus.h"
+#include "SyncShieldCommands.h"
+#include "SyncShieldStatusPresenter.h"
+
+class UPackage;
 
 class SSyncShieldToolbar : public SCompoundWidget
 {
@@ -16,34 +21,6 @@ public:
 	void Construct(const FArguments& InArgs);
 
 private:
-	enum class ESourceControlProvider : uint8
-	{
-		None,
-		Git,
-		Plastic
-	};
-
-	struct FSourceControlStatus
-	{
-		ESourceControlProvider Provider = ESourceControlProvider::None;
-		bool bClientAvailable = false;
-		bool bRepo = false;
-		bool bAuthRequired = false;
-		bool bStatusError = false;
-		bool bHasUpstream = false;
-		bool bHasConflicts = false;
-		int32 Ahead = 0;
-		int32 Behind = 0;
-		int32 Staged = 0;
-		int32 Unstaged = 0;
-		int32 Untracked = 0;
-		FString Branch;
-		FString RepoRoot;
-		FString WorkspaceName;
-		FString LastError;
-		FDateTime LastUpdateUtc;
-	};
-
 	EActiveTimerReturnType UpdateState(double InCurrentTime, float InDeltaTime);
 
 	TSharedRef<SWidget> BuildMenu();
@@ -53,11 +30,16 @@ private:
 	FText GetTooltip() const;
 	FText GetAutoFetchIntervalLabel() const;
 	FText GetProviderLabel() const;
-	FString GetContextLabel(const FSourceControlStatus& Status) const;
-	void AppendUnsavedDetails(FString& InOutText) const;
-	bool IsStatusDegraded(const FSourceControlStatus& Status) const;
+	FString GetContextLabel(const FSyncShieldSourceControlStatus& Status) const;
+	// Gathers the editor-side counts the presenter needs; the presenter itself
+	// reads no widget state.
+	FSyncShieldEditorState GetEditorState() const;
+	static FString GetSubsystemSummary();
+	bool IsStatusDegraded(const FSyncShieldSourceControlStatus& Status) const;
 
 	void ExecuteSaveAll();
+	void ExecuteSaveBlueprints();
+	void ExecuteSaveCurrentLevel();
 	void ExecuteRefresh();
 	void ExecuteGitFetch();
 	void ExecuteGitPullRebase();
@@ -79,26 +61,21 @@ private:
 	void UpdateUnsavedState();
 	void RequestSourceControlStatusUpdate();
 	void StartSourceControlStatusUpdate();
-	bool TryPopulateGitStatus(const FString& ProjectDir, FSourceControlStatus& OutStatus, FString& OutError) const;
-	bool TryPopulatePlasticStatus(const FString& ProjectDir, FSourceControlStatus& OutStatus, FString& OutError) const;
-	void ParseGitStatusOutput(const FString& Output, FSourceControlStatus& Status) const;
-	void ParsePlasticStatusOutput(const FString& Output, FSourceControlStatus& Status) const;
-	FString BuildStatusSummary(const FSourceControlStatus& Status) const;
-	FSourceControlStatus GetStatusSnapshot() const;
-	ESourceControlProvider GetPreferredProvider() const;
+	// These run on worker threads and therefore must not touch widget state.
+	FString BuildStatusSummary(const FSyncShieldSourceControlStatus& Status) const;
+	FSyncShieldSourceControlStatus GetStatusSnapshot() const;
+	ESyncShieldProvider GetPreferredProvider() const;
 	void MaybeNotifyStatusChange();
+	FString GetStatusChangeKey() const;
 
-	bool RunCommandWithTimeout(const FString& Command, const FString& Args, const FString& WorkingDir, FString& OutStdOut, FString& OutStdErr, int32& OutExitCode, float TimeoutSeconds) const;
-	bool RunGit(const FString& Args, const FString& WorkingDir, FString& OutStdOut, FString& OutStdErr, int32& OutExitCode) const;
-	FString GetGitExecutable() const;
-	bool RunPlastic(const FString& Args, const FString& WorkingDir, FString& OutStdOut, FString& OutStdErr, int32& OutExitCode) const;
-	FString GetPlasticExecutable() const;
-	void RunGitCommandAsync(const FString& Args, const FText& SuccessMessage, const FText& FailureMessage, bool bRefreshAfter, bool bSilentSuccess = false);
-	void RunPlasticCommandAsync(const FString& Args, const FText& SuccessMessage, const FText& FailureMessage, bool bRefreshAfter, bool bSilentSuccess = false);
+	// Take the operation rather than raw arguments: the widget owns notification
+	// policy, FSyncShieldGitCommands owns the process invocation.
+	void RunGitCommandAsync(FSyncShieldGitOperation Operation, const FText& SuccessMessage, const FText& FailureMessage, bool bRefreshAfter, bool bSilentSuccess = false);
+	void RunPlasticCommandAsync(FSyncShieldGitOperation Operation, const FText& SuccessMessage, const FText& FailureMessage, bool bRefreshAfter, bool bSilentSuccess = false);
 
 	void Notify(const FText& Message, bool bSuccess) const;
 
-	FSourceControlStatus SourceControlStatus;
+	FSyncShieldSourceControlStatus SourceControlStatus;
 	bool bHasUnsavedAssets = false;
 	int32 UnsavedAssetCount = 0;
 	int32 LockedByOtherCount = 0;
@@ -119,4 +96,3 @@ private:
 	friend class FSyncShieldToolbarTestAccessor;
 #endif
 };
-

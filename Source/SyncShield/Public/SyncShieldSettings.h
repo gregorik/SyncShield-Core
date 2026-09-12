@@ -7,7 +7,7 @@
 #include "Engine/DeveloperSettings.h"
 #include "SyncShieldSettings.generated.h"
 
-UCLASS(config = EditorPerProjectUserSettings, defaultconfig, meta = (DisplayName = "SyncShield"))
+UCLASS(config = EditorPerProjectUserSettings, meta = (DisplayName = "SyncShield"))
 class SYNCSHIELD_API USyncShieldSettings : public UDeveloperSettings
 {
 	GENERATED_BODY()
@@ -32,6 +32,14 @@ public:
 
 	UPROPERTY(EditAnywhere, config, Category = "Notifications", meta = (ClampMin = "0.5", UIMin = "0.5"))
 	float StatusToastMinIntervalSeconds;
+
+	/** Absolute path to the Git executable. Leave empty to resolve "git" from PATH. */
+	UPROPERTY(EditAnywhere, config, Category = "Source Control", meta = (DisplayName = "Git Executable Path"))
+	FString GitExecutablePath;
+
+	/** Absolute path to the Plastic SCM (Unity Version Control) CLI. Leave empty to resolve "cm" from PATH. */
+	UPROPERTY(EditAnywhere, config, Category = "Source Control", meta = (DisplayName = "Plastic CLI Path"))
+	FString PlasticExecutablePath;
 
 	virtual FName GetCategoryName() const override
 	{

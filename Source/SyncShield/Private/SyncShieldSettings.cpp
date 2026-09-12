@@ -11,4 +11,6 @@ USyncShieldSettings::USyncShieldSettings()
 	AutoFetchIntervalSeconds = 120.0f;
 	bToastOnStatusChange = true;
 	StatusToastMinIntervalSeconds = 4.0f;
+	GitExecutablePath = FString();
+	PlasticExecutablePath = FString();
 }

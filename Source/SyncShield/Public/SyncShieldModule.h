@@ -6,6 +6,7 @@
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
 
+class FSyncShieldSaveProfileService;
 class UObject;
 
 class FSyncShieldModule : public IModuleInterface
@@ -20,12 +21,14 @@ public:
 	virtual void ShutdownModule() override;
 
 	bool SaveAllDirtyPackages(FString& OutSummary);
+	bool SaveDirtyBlueprintPackages(FString& OutSummary);
+	bool SaveCurrentLevelPackages(FString& OutSummary);
+	FString BuildSubsystemSummary() const;
 
 private:
 	/** Registers the SyncShield status widget into the main Level Editor Toolbar. */
 	void RegisterMenus();
 	void OnAssetOpened(UObject* Asset);
 
-	TWeakObjectPtr<UObject> LastActiveAsset;
+	TUniquePtr<FSyncShieldSaveProfileService> SaveProfileService;
 };
-
