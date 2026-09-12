@@ -1,8 +1,20 @@
-# SyncShield Core 0.1
+<div align="center">
+
+<img width="1935" height="1080" alt="SyncShield promotional banner" src="https://github.com/user-attachments/assets/b7ca8455-5b53-47b9-8d99-0e6ec12b227d" />
+
+# 🛡️ SyncShield Core 0.1
+
+[![Unreal Engine](https://img.shields.io/badge/Unreal_Engine-5.7-blue.svg)](https://www.unrealengine.com/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+![Platform](https://img.shields.io/badge/Platform-Win64-lightgray.svg)
+
+</div>
 
 Source-control status and guarded saves for the Unreal Editor. Free and open source under the [MIT license](LICENSE).
 
 Core 0.1 brings the current SyncShield implementation to OSS with **12 of 24 user-facing capabilities (50%)**. The [feature matrix](docs/FEATURES.md) defines the counting method and commercial boundary. This is a source plugin for **Unreal Engine 5.7 on Windows (Win64)**.
+
+![SyncShield promotional graphic](https://github.com/user-attachments/assets/ffadb37f-8cf2-4cae-b4ec-2193eb42cc37)
 
 ## Features
 
